@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+  <title>Cotizaciones — Crear y confirmar</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    .w-110 { width: 110px; }
+    .w-140 { width: 140px; }
+  </style>
+</head>
+<body>
+<div class="container mt-4">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h3 class="mb-0">Cotizaciones</h3>
+    <a href="/index-muebles.html" class="btn btn-secondary">Volver a Muebles</a>
+  </div>
+
+  <div class="card mb-3">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <span>Nueva cotización</span>
+      <button class="btn btn-sm btn-outline-primary" id="addItem">Agregar ítem</button>
+    </div>
+    <div class="card-body">
+      <div class="table-responsive">
+        <table class="table align-middle">
+          <thead>
+            <tr>
+              <th class="w-140">Mueble ID</th>
+              <th class="w-140">Variante ID</th>
+              <th class="w-110">Cantidad</th>
+              <th>Acción</th>
+            </tr>
+          </thead>
+          <tbody id="itemsBody"></tbody>
+        </table>
+      </div>
+      <div id="msgNew" class="alert d-none"></div>
+    </div>
+    <div class="card-footer">
+      <button id="crear" class="btn btn-primary">Crear cotización</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">Confirmar cotización</div>
+    <div class="card-body">
+      <div class="row g-3 align-items-end">
+        <div class="col-auto">
+          <label class="form-label">ID cotización</label>
+          <input id="cotId" type="number" class="form-control" placeholder="Ej: 1" />
+        </div>
+        <div class="col-auto">
+          <button id="confirmar" class="btn btn-success">Confirmar venta</button>
+        </div>
+      </div>
+      <div id="msgConfirm" class="alert d-none mt-3"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const itemsBody = document.getElementById('itemsBody');
+  const addItemBtn = document.getElementById('addItem');
+  const crearBtn = document.getElementById('crear');
+  const msgNew = document.getElementById('msgNew');
+  const msgConfirm = document.getElementById('msgConfirm');
+  const cotIdInput = document.getElementById('cotId');
+
+  function addItemRow(muebleId = '', varianteId = '', cantidad = 1) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><input type="number" class="form-control" value="${muebleId}" placeholder="muebleId" min="1"></td>
+      <td><input type="number" class="form-control" value="${varianteId}" placeholder="varianteId" min="1"></td>
+      <td><input type="number" class="form-control" value="${cantidad}" placeholder="cantidad" min="1"></td>
+      <td><button class="btn btn-sm btn-outline-danger">Quitar</button></td>
+    `;
+    tr.querySelector('button').addEventListener('click', () => tr.remove());
+    itemsBody.appendChild(tr);
+  }
+
+  addItemBtn.addEventListener('click', () => addItemRow());
+
+  crearBtn.addEventListener('click', async () => {
+    msgNew.className = 'alert d-none';
+    const rows = [...itemsBody.querySelectorAll('tr')];
+    if (rows.length === 0) {
+      msgNew.textContent = 'Agrega al menos un ítem.';
+      msgNew.className = 'alert alert-warning';
+      return;
+    }
+    const items = rows.map(r => {
+      const tds = r.querySelectorAll('td input');
+      const valVar = (tds[1].value ?? '').trim();
+      return {
+      muebleId: Number(tds[0].value),
+      varianteId: valVar === '' ? null : Number(valVar), // <- null si vacío
+      cantidad: Number(tds[2].value)
+      };
+    });
+
+    try {
+      const resp = await fetch('/api/cotizaciones', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(items)
+      });
+      if (!resp.ok) throw new Error(await resp.text() || ('HTTP ' + resp.status));
+      const data = await resp.json();
+      msgNew.textContent = 'Cotización creada con ID: ' + data.id + ' — Total: ' + (data.total ?? '');
+      msgNew.className = 'alert alert-success';
+      cotIdInput.value = data.id;
+    } catch (e) {
+      msgNew.textContent = 'Error al crear: ' + e.message;
+      msgNew.className = 'alert alert-danger';
+    }
+  });
+
+  document.getElementById('confirmar').addEventListener('click', async () => {
+  msgConfirm.className = 'alert d-none';
+  const id = cotIdInput.value;
+  if (!id) {
+    msgConfirm.textContent = 'Ingresa el ID de la cotización';
+    msgConfirm.className = 'alert alert-warning';
+    return;
+  }
+
+  try {
+    const resp = await fetch(`/api/cotizaciones/${id}/confirmar`, {
+      method: 'POST',
+      headers: { 'Accept': 'application/json' }
+    });
+
+    const ct = resp.headers.get('content-type') || '';
+
+    // respuesta exitosa
+    if (resp.ok) {
+      if (ct.includes('application/json')) {
+        const data = await resp.json();
+        msgConfirm.textContent = 'Cotización confirmada. Estado: ' + (data.estado ?? 'OK') + (data.total ? ' — Total: ' + data.total : '');
+      } else {
+        // no-JSON (204, html, texto)
+        const text = await resp.text();
+        msgConfirm.textContent = text || 'Cotización confirmada';
+      }
+      msgConfirm.className = 'alert alert-success';
+      return;
+    }
+
+    // RESPUESTA ERROR (resp.ok === false)
+    let errorText = '';
+    // 1) Intento parsear JSON si corresponde
+    if (ct.includes('application/json')) {
+      try {
+        const errObj = await resp.json();
+        // buscar campos habituales
+        errorText = errObj.message || errObj.error || errObj.msg || JSON.stringify(errObj);
+      } catch (jsonErr) {
+        // fallback
+        errorText = 'Error en el servidor';
+      }
+    } else {
+      // 2) si no es JSON, leer como texto (puede ser stacktrace HTML/plain)
+      const text = await resp.text();
+      if (!text) {
+        errorText = 'Error en el servidor (sin detalle)';
+      } else {
+        // Buscar mensajes útiles dentro del texto (por ejemplo "stock insuficiente")
+        const lowered = text.toLowerCase();
+        if (lowered.includes('stock insuficiente') || lowered.includes('no queda stock')) {
+          errorText = 'No queda stock';
+        } else {
+          // si viene un stacktrace enorme, tomar la primera línea con texto y acortar
+          const firstLine = text.split(/\r?\n/).find(l => l.trim().length > 0) || text;
+          // si es HTML, extraer contenido entre <p>, <pre>, etc. rápido (sin DOM)
+          const stripped = firstLine.replace(/<[^>]*>/g, '').trim();
+          errorText = stripped.length > 200 ? stripped.slice(0, 200) + '...' : stripped;
+        }
+      }
+    }
+
+    // Mapeos extra: si el backend envía "illegalstateexception" o similar, mostrar friendly:
+    const eLower = (errorText || '').toLowerCase();
+    if (eLower.includes('stock') || eLower.includes('insuficiente') || eLower.includes('no queda stock')) {
+      errorText = 'No queda stock';
+    } else if (eLower.includes('illegalstateexception')) {
+      errorText = 'No se pudo confirmar la venta (estado inválido)';
+    }
+
+    msgConfirm.textContent = 'No se pudo confirmar: ' + errorText;
+    msgConfirm.className = 'alert alert-danger';
+
+  } catch (e) {
+    // network / exceptions
+    msgConfirm.textContent = 'No se pudo confirmar: ' + (e.message || e);
+    msgConfirm.className = 'alert alert-danger';
+  }
+});
+
+  // Fila inicial para comodidad
+  addItemRow();
+</script>
+</body>
+</html>

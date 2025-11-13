@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+  <title>Muebles — Listado</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body>
+<div class="container mt-4">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h3 class="mb-0">Muebles</h3>
+    <div class="d-flex gap-2">
+      <a href="/cotizaciones.html" class="btn btn-outline-secondary">Cotizaciones</a>
+      <a href="/nuevo-mueble.html" class="btn btn-primary">Nuevo mueble</a>
+      <a href="/variantes.html" class="btn btn-outline-secondary">Variantes</a>
+
+    </div>
+  </div>
+
+  <div id="mensaje" class="alert d-none"></div>
+
+  <table class="table table-striped align-middle">
+    <thead>
+      <tr>
+        <th>ID</th><th>Nombre</th><th>Tipo</th><th>Precio base</th>
+        <th>Stock</th><th>Estado</th><th>Tamaño</th><th>Material</th>
+        <th style="width:180px;">Acciones</th>
+      </tr>
+    </thead>
+    <tbody id="tbody"></tbody>
+  </table>
+</div>
+
+<script>
+  const tbody = document.getElementById('tbody');
+  const msg = document.getElementById('mensaje');
+
+  function setMsg(text, type='success') {
+    msg.textContent = text;
+    msg.className = 'alert alert-' + type;
+  }
+
+  async function cargar() {
+    try {
+      const resp = await fetch('/api/muebles');
+      if (!resp.ok) throw new Error('No se pudo cargar el listado');
+      const datos = await resp.json();
+      tbody.innerHTML = datos.map(m => `
+        <tr>
+          <td>${m.id ?? ''}</td>
+          <td>${m.nombre ?? ''}</td>
+          <td>${m.tipo ?? ''}</td>
+          <td>${m.precioBase ?? ''}</td>
+          <td>${m.stock ?? ''}</td>
+          <td>${m.estado ?? ''}</td>
+          <td>${m.tamano ?? ''}</td>
+          <td>${m.material ?? ''}</td>
+          <td class="d-flex gap-2">
+            <button class="btn btn-sm btn-primary" onclick="editar(${m.id})">Editar</button>
+            <button class="btn btn-sm btn-warning" onclick="desactivar(${m.id})">Desactivar</button>
+            <button class="btn btn-sm btn-danger"  onclick="eliminar(${m.id})">Eliminar</button>
+          </td>
+        </tr>
+      `).join('');
+    } catch (e) {
+      setMsg(e.message, 'danger');
+    }
+  }
+
+  function editar(id) {
+    window.location.href = `/editar-mueble.html?id=${id}`;
+  }
+
+  async function desactivar(id) {
+    try {
+      const resp = await fetch(`/api/muebles/${id}/desactivar`, { method: 'POST' });
+      if (!resp.ok) throw new Error('No se pudo desactivar (HTTP ' + resp.status + ')');
+      setMsg('Mueble ' + id + ' desactivado');
+      cargar();
+    } catch (e) {
+      setMsg(e.message, 'danger');
+    }
+  }
+
+  async function eliminar(id) {
+    if (!confirm('¿Eliminar mueble ' + id + '?')) return;
+    try {
+      const resp = await fetch('/api/muebles/' + id, { method: 'DELETE' });
+      if (!resp.ok) throw new Error('No se pudo eliminar (HTTP ' + resp.status + ')');
+      setMsg('Mueble ' + id + ' eliminado');
+      cargar();
+    } catch (e) {
+      setMsg(e.message, 'danger');
+    }
+  }
+
+  cargar();
+</script>
+</body>
+</html>
